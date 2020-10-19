@@ -6,7 +6,6 @@ Created on : Sun Mar 15 13:18:50 2020
 @mail      : rglez.developer@gmail.com
 """
 import os
-import sys
 import glob
 import math
 import numpy as np
@@ -327,10 +326,19 @@ def conf_creator(PDB, PSF, PRM, steps=1000, per_cycle=20):
          'parameters          ' + PRM + '\n'
          'exclude             ' + 'scaled1-4\n'
          '1-4scaling          ' + '1.0\n'
-         'cutoff              ' + '12.0\n'
+         # 'cutoff              ' + '12.0\n'
+
+         # GBIS
+         'cutoff             ' + '16.0\n'
+         'GBIS               ' + 'on\n'
+         'solventDielectric  ' + '80\n'
+         'switchdist          ' + '15.0\n'
+         'pairlistdist        ' + '18\n'
+
+
          'switching           ' + 'on\n'
-         'switchdist          ' + '10.0\n'
-         'pairlistdist        ' + '13.5\n'
+         # 'switchdist          ' + '10.0\n'
+         # 'pairlistdist        ' + '13.5\n'
          'timestep            ' + '1.0\n'
          'nonbondedFreq       ' + '1\n'
          'fullElectFrequency  ' + '2\n'
@@ -497,7 +505,7 @@ def measure_dihedral(cartesians, dihedral):
     # ---- Getting angle ---------------------------------------------------- #
     cos_angle = np.dot(cross_1, cross_2) / (np.linalg.norm(cross_1) *
                                             np.linalg.norm(cross_2))
-    angle = round(math.degrees(math.acos(cos_angle)), 2)
+    angle = round(math.degrees(math.acos(round(cos_angle, 2))), 2)
     # ---- Checking sign ---------------------------------------------------- #
     if sign_check < 0:
         angle_sign = -angle

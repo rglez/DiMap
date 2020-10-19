@@ -20,6 +20,7 @@ starting_time = time.time()
 # =============================================================================
 # Parsing configuration file arguments
 # =============================================================================
+root_dir = os.path.abspath('.')
 argv = sys.argv[1]
 config = conf.ConfigParser()
 config.read(argv)
@@ -28,7 +29,7 @@ psf_file = config.get('files', 'psf_path')
 pdb_file = config.get('files', 'pdb_path')
 prm_file = config.get('files', 'prm_path')
 # [params] section
-grid_space = config.getint('params', 'angle_step')
+grid_space = config.getfloat('params', 'angle_step')
 e_cutoff = config.getfloat('params', 'energy_cut')
 rms_lim = config.getfloat('params', 'rmsd_cut')
 xmin = config.getfloat('params', 'xmin')
@@ -66,7 +67,8 @@ else:
 a, b, c, d = dihedrals[0][0]
 e = dihedrals[0][1][-1]
 # creation of production folder -----------------------------------------------
-opt_folder = 'out_{}-{}_{}_{}_{}_{}'.format(base_name, a, b, c, d, e)
+opt_folder = os.path.join(
+        root_dir, 'out_{}-{}_{}_{}_{}_{}'.format(base_name, a, b, c, d, e))
 err1 = 'ERROR: Directory {} exists. Please back it up !!!'.format(opt_folder)
 assert dimap.overwrite_dir(opt_folder), err1
 # rotations -------------------------------------------------------------------
