@@ -59,6 +59,7 @@ else:
     psi_angle = [int(x) for x in config.get('params', 'psi').split()]
     dihedrals = [[phi_angle, psi_angle]]
 
+print('Selected dihedrals are: {}'.format(dihedrals))
 
 # =============================================================================
 # Rotations (Rodrigues Method)
