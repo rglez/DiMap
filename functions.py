@@ -178,7 +178,7 @@ def find_glycosidics(parsed_psf):
     glycosidic = []
     for i in range(oxygens.shape[0]):
         a, b = oxygens.iloc[i].neighbors
-        if parsed_psf.iloc[a].resname != parsed_psf.iloc[b].resname:
+        if parsed_psf.iloc[a].resnum != parsed_psf.iloc[b].resnum:
             o = oxygens.iloc[i]['index']
             if parsed_psf.iloc[a].atomname == 'H1':
                 c1 = a
