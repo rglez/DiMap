@@ -6,6 +6,7 @@ Created on : Sun Mar 15 13:18:50 2020
 @mail      : rglez.developer@gmail.com
 """
 import glob
+import itertools as it
 import math
 import os
 import pickle
@@ -367,6 +368,36 @@ def mk_mesh(x=5, y=5, xmin=-180, xmax=180, ymin=-180, ymax=180):
             meshgrid.append(xy_pair)
     return meshgrid
 
+def extract_values(itertools_product, reverse=False):
+    if reverse:
+        return [(x[1], x[0]) for x in itertools_product]
+    return [(x[0], x[1]) for x in itertools_product]
+
+def mk_mesh1(xy_min=-180, xy_max=180, xy_step=60):
+    # create combinations of flows
+    flows = ['up', 'down']
+    flows_combinations = set(it.combinations([*flows, *flows], 2))
+    # define up & down values once
+    values = {'up': range(xy_min, xy_max, xy_step),
+              'down': range(xy_max, xy_min, -xy_step)}
+    # always fix one position
+    fixed = [0, 1]
+    fixed_combinations = set([x for x in it.combinations([*fixed, *fixed], 2)
+                              if x[0] != x[1]])
+
+    # explore all possible combinations
+    meshes = {}
+    for combination in flows_combinations:
+        for fix in fixed_combinations:
+            key = "{}-{}-{}-{}".format(*combination, *fix)
+            flow1, flow2  = combination
+            if fix[0] == 0:
+                iter_product = it.product(values[flow2], values[flow1])
+                meshes.update({key: extract_values(iter_product, reverse=True)})
+            else:
+                iter_product = it.product(values[flow1], values[flow2])
+                meshes.update({key: extract_values(iter_product, reverse=False)})
+    return meshes
 
 # =============================================================================
 # central.rotations
