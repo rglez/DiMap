@@ -185,7 +185,8 @@ def find_glycosidics(parsed_psf):
                                               parsed_psf.iloc[c1].atomname,
                                               parsed_psf.iloc[cx].atomname,
                                               parsed_psf.iloc[cx].resname))
-    return names, glycosidic
+    assert len(names) == 1
+    return names[0], glycosidic
 
 
 class log:
