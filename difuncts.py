@@ -5,26 +5,27 @@ Created on : Sun Mar 15 13:18:50 2020
 @author    : Roy Gonzalez-Aleman
 @mail      : rglez.developer@gmail.com
 """
-import os
 import glob
 import math
+import os
+import pickle
+import tempfile
+import time
+from collections import OrderedDict, namedtuple as nt
+from multiprocessing import Pool
+from subprocess import run
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import mdtraj as md
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
-from subprocess import run
-import matplotlib.pyplot as plt
-from collections import namedtuple as nt
-from collections import OrderedDict
-
-import mdtraj as md
+import prody as prd
 from scipy.interpolate import griddata
 
 
-# =============================================================================
-# central.pdb
-# =============================================================================
 def parse_pdb(pdb_file):
-    '''
+    """
     DESCRIPTION
     Parse .pdb files for finding system and atomic information.
 
@@ -34,19 +35,17 @@ def parse_pdb(pdb_file):
         parsed_pdb (pandas.DataFrame): dataframe with parsed information in
         columns: serial, chain, resnum, resname, atomname, atomtype,
         atomcharge, atomicnumber, neighbors, valence, element and index.
-    '''
+    """
 
     # ---- open file ----------------------------------------------------------
     with open(pdb_file, 'rt') as psf:
         lines = psf.readlines()
-
     # ---- parse atomic info --------------------------------------------------
     info = []
     info_tup = nt('Atom', ['Record', 'AtomNum', 'AtomName', 'AltLoc',
                            'ResName', 'ChainID', 'ResNum', 'Insert', 'x', 'y',
                            'z', 'Occup', 'BFactor', 'SegID', 'Symbol',
                            'Charge'])
-
     for line in lines:
         if ('ATOM' in line) or ('HETATM' in line):
             line = line.strip()
@@ -56,7 +55,6 @@ def parse_pdb(pdb_file):
                         line[60:66], line[66:76], line[76:78], line[78:80]]
             splitted = [x.strip() for i, x in enumerate(splitted)]
             info.append(info_tup(*splitted))
-
     # ---- parse bonded info --------------------------------------------------
     parsed_pdb = pd.DataFrame(info)
     parsed_pdb = parsed_pdb.astype(
@@ -67,20 +65,20 @@ def parse_pdb(pdb_file):
     return parsed_pdb
 
 
-def write(pdb_DF, output_name):
-    '''
+def write(pdb_df, output_name):
+    """
     Writes a well formated pdb file from a DataFrame. Created because
     'to_string()' pandas.DataFrame's method has a bug that prints an extra
     white space between every two columns.
     RETURNS output_name.
-    '''
+    """
     # ---- Formatters in agreement with PDB standards ----------------------- #
     formatters = ('{:6}{:>5}{:>5}{:1}{:4}{:1}{:>4}{:4}{:>8.3f}{:>8.3f}' +
                   '{:>8.3f}{:>6}{:>6}{:>10}{:>2}{:2}')
     # ---- Formatting each line of a pandas.DataFrame ----------------------- #
     with open(output_name, 'wt') as output:
-        for line in range(len(pdb_DF)):
-            row = list(pdb_DF.iloc[line])
+        for line in range(len(pdb_df)):
+            row = list(pdb_df.iloc[line])
             row = formatters.format(row[0], row[1], row[2], row[3], row[4],
                                     row[5], row[6], row[7], row[8], row[9],
                                     row[10], row[11], row[12], row[13],
@@ -90,27 +88,23 @@ def write(pdb_DF, output_name):
     return output_name
 
 
-# =============================================================================
-# central.psf
-# =============================================================================
 def parse_psf(psf_file):
-    '''
+    """
     DESCRIPTION
-    Parse .psf files for finding system and atomic information as well as
+    Parse .psf_14 files for finding system and atomic information as well as
     bonded information and each atom neighbors.
 
     Arguments:
-        psf_file (srt): path to a formatted .psf file.
+        psf_file (srt): path to a formatted .psf_14 file.
     Returns:
         parsed_psf (pandas.DataFrame): dataframe with parsed information in
         columns: serial, chain, resnum, resname, atomname, atomtype,
         atomcharge, atomicnumber, neighbors, valence, element and index.
-    '''
+    """
 
     # ---- open file ----------------------------------------------------------
     with open(psf_file, 'rt') as psf:
         lines = psf.readlines()
-
     # ---- parse atomic info --------------------------------------------------
     atomic_str = '!NATOM'
     for i, line in enumerate(lines):
@@ -119,7 +113,7 @@ def parse_psf(psf_file):
     info = []
     info_tup = nt('Atom', ['serial', 'chain', 'resnum', 'resname', 'atomname',
                   'atomtype', 'atomcharge', 'atomicnumber'])
-    for line in lines[n+1:n+1+total]:
+    for line in lines[n + 1: n + 1 + total]:
         splitted = line.split()[:8]
         splitted[0] = int(splitted[0])
         splitted[2] = int(splitted[2])
@@ -127,20 +121,17 @@ def parse_psf(psf_file):
         splitted[7] = float(splitted[7])
         info.append(info_tup(*splitted))
     parsed_psf = pd.DataFrame(info)
-
     # ---- parse bonded info --------------------------------------------------
     bond_str = '!NBOND'
     for i, line in enumerate(lines):
         if bond_str in line:
             n, total = i, int(line.split()[0])
-
     pairs = []
     for line in lines[n+1:]:
         splitted = line.split()
         if not splitted:
             break
         pairs.extend([int(x) - 1 for x in splitted])
-
     neighbors = OrderedDict()
     for i, x in enumerate(info):
         neighbors[i] = []
@@ -149,7 +140,6 @@ def parse_psf(psf_file):
         b = pairs[x+1]
         neighbors[a].append(b)
         neighbors[b].append(a)
-
     # ---- dataframe of info --------------------------------------------------
     parsed_psf['neighbors'] = neighbors.values()
     parsed_psf['valence'] = [len(x) for x in neighbors.values()]
@@ -159,7 +149,7 @@ def parse_psf(psf_file):
 
 
 def find_glycosidics(parsed_psf):
-    '''
+    """
     DESCRIPTION
     Find the index of atoms involved in the glycosidic linkage of a (di/poly)-
     saccharide.
@@ -170,12 +160,12 @@ def find_glycosidics(parsed_psf):
     Returns:
         glycosidic (list): nested list containing a list of list for every
         glycosidic linkage detected.
-    '''
+    """
 
     oxygens = parsed_psf[(parsed_psf['element'] == 'O') &
                          (parsed_psf['valence'] == 2)]
-
     glycosidic = []
+    names = []
     for i in range(oxygens.shape[0]):
         a, b = oxygens.iloc[i].neighbors
         if parsed_psf.iloc[a].resnum != parsed_psf.iloc[b].resnum:
@@ -191,17 +181,18 @@ def find_glycosidics(parsed_psf):
             n_cx = parsed_psf.iloc[cx].neighbors
             hx = (parsed_psf.iloc[n_cx].element == 'H').idxmax()
             glycosidic.append([[h1, c1, o, cx], [c1, o, cx, hx]])
-    return glycosidic
+            names.append('{}_{}_{}_{}'.format(parsed_psf.iloc[c1].resname,
+                                              parsed_psf.iloc[c1].atomname,
+                                              parsed_psf.iloc[cx].atomname,
+                                              parsed_psf.iloc[cx].resname))
+    return names, glycosidic
 
 
-# =============================================================================
-# central.loginfo
-# =============================================================================
 class log:
-    '''
+    """
     Defines a namd.log object. Only the **name** of the object is needed to
     initialize it.
-    '''
+    """
 
     def __init__(self, name):
         self.name = name
@@ -209,16 +200,16 @@ class log:
         self.all_energies = self.get_all_energies()
 
     def get_raw_lines(self):
-        ''' Gets all lines in a **namd.log** file using **readlines**.
+        """ Gets all lines in a **namd.log** file using **readlines**.
 
         Returns:
             (list): **self.readlines()**
-        '''
+        """
         with open(self.name, 'rt') as inp:
             return inp.readlines()
 
     def get_all_energies(self):
-        ''' Gets all energy terms printed on a **namd.log** as a DataFrame.
+        """ Gets all energy terms printed on a **namd.log** as a DataFrame.
 
         Energies are retrieved for every line that contains **ENERGY:** and
         whose lenght are exactly the same as the titles of the energy terms.
@@ -226,7 +217,7 @@ class log:
         Returns:
             (pd.DataFrame): a DataFrame containing all energy terms found in
             **namd.log** object.
-        '''
+        """
         lines = self.lines
         # getting titles
         for line in lines:
@@ -242,16 +233,16 @@ class log:
         return pd.DataFrame(data=all_energies, columns=titles).astype(float)
 
     def get_last_energy(self):
-        ''' Gets **only** the last energy of a **namd.log** file.
+        """ Gets **only** the last energy of a **namd.log** file.
 
         Returns:
             (float): last energy term on **namd.log** file corresponding to the
             **TOTAL** energy of the system.
-        '''
+        """
         return self.get_all_energies()['TOTAL'].iloc[-1]
 
     def get_dcd_energies(self):
-        ''' Gets energy **TOTAL** terms of the system that were printed on a
+        """ Gets energy **TOTAL** terms of the system that were printed on a
         **.dcd** file.
 
         .. warning ::
@@ -262,7 +253,7 @@ class log:
             (pd.DataFrame): a DataFrame containing timesteps (TS) and energy
             of the step (TOTAL).
 
-        '''
+        """
         lines = self.lines
         dcd_written_steps = []
         for line in lines:
@@ -278,9 +269,9 @@ class log:
 # central.gnr
 # =============================================================================
 def generic_matplotlib():
-    '''
+    """
     Some customizations of matplotlib.
-    '''
+    """
     mpl.rc('figure', figsize=[12, 8], dpi=300)
     mpl.rc('xtick', direction='in', top=True)
     mpl.rc('xtick.major', top=False, )
@@ -296,9 +287,9 @@ def generic_matplotlib():
 
 
 def overwrite_dir(dir_name):
-    '''
+    """
     Overwrites an existing directory silently.
-    '''
+    """
     try:
         os.mkdir(dir_name)
         return dir_name
@@ -362,10 +353,10 @@ def conf_creator(PDB, PSF, PRM, steps=1000, per_cycle=20):
 
 
 def mk_mesh(x=5, y=5, xmin=-180, xmax=180, ymin=-180, ymax=180):
-    '''
+    """
     Creates a list of X,Y pairs of values in a grid format.
     RETURN created meshgrid.
-    '''
+    """
     x_values = list(np.arange(xmin, xmax, x))
     y_values = list(np.arange(ymin, ymax, y))
     meshgrid = []
@@ -380,11 +371,11 @@ def mk_mesh(x=5, y=5, xmin=-180, xmax=180, ymin=-180, ymax=180):
 # central.rotations
 # =============================================================================
 def get_both_sides(PSF_file, dihedral):
-    '''
+    """
     "Cuts" a non-cyclic molecule in two parts. One of them (side_rot) contains
     atoms that will rotate using Rodrigues rotation approach.
     RETURN side_rot
-    '''
+    """
     # ======================================================================= #
     connect = get_psf_info(PSF_file)[3]            # dict of connectivities
     b = dihedral[1]                                # smaller will be fixed
@@ -412,7 +403,7 @@ def get_both_sides(PSF_file, dihedral):
 
 
 def get_psf_info(PSF_file):
-    '''
+    """
     Get information from CHARMM topology file (PSF)
     RETURN[0] total number of atoms
     RETURN[1] dataframe of pdb_like section in PSF_file
@@ -420,7 +411,7 @@ def get_psf_info(PSF_file):
     RETURN[3] dictionary of connectivities {int(atom):list(connectivities)}
     RETURN[4] dictionary of connectivities {int(atom):list(elements)}
     RETURN[5] strings containing applied patches
-    '''
+    """
     # ==== Finding string patterns positions ================================ #
     with open(PSF_file, 'rt') as psf:
         lines = psf.readlines()
@@ -483,7 +474,7 @@ def get_psf_info(PSF_file):
 
 
 def measure_dihedral(cartesians, dihedral):
-    ''' Measures a dihedral angle from given cartesian coordinates.
+    """ Measures a dihedral angle from given cartesian coordinates.
 
     Args:
         cartesians (np.array): array of cartesian coordinates x, y and z.
@@ -491,7 +482,7 @@ def measure_dihedral(cartesians, dihedral):
                          dihedral angle. **indices** must be in cartesian.
     Returns:
         (float): dihedral angle in range [-180 : +180].
-    '''
+    """
     a, b, c, d = dihedral
     # ---- Vectors ---------------------------------------------------------- #
     vec1 = cartesians[b] - cartesians[a]
@@ -515,7 +506,7 @@ def measure_dihedral(cartesians, dihedral):
 
 
 def set_dihedral_value(cartesians, dihedral, angle, side_rot):
-    ''' Sets **dihedral** to a specific **angle** value using
+    """ Sets **dihedral** to a specific **angle** value using
     "Rodrigues Rotation Method".
 
     Args:
@@ -527,13 +518,12 @@ def set_dihedral_value(cartesians, dihedral, angle, side_rot):
                                molecule that will be rotated.
     Returns:
         (np.array): an array of rotated cartesians.
-    '''
-    a, b, c, d = dihedral
+    """
     x0 = measure_dihedral(cartesians, dihedral)
     xf = angle
     if {
         (x0 >= 0 and xf >= 0) or
-        (x0 < 0 and xf >= 0) or
+        (x0 < 0 <= xf) or
         ((x0 < 0 and xf < 0) and xf > x0)
        }:
         incremental_angle = xf - x0
@@ -545,20 +535,20 @@ def set_dihedral_value(cartesians, dihedral, angle, side_rot):
 
 
 def module(vector):
-    '''Determines the norm (lenght) of a vector.
+    """Determines the norm (lenght) of a vector.
 
     Args:
         vector (np.array): an array containing x, y, and z cartesian
                            coordinates.
     Returns:
         (float): module of **vector**.
-    '''
+    """
     module = np.sqrt((vector**2).sum())
     return module
 
 
 def rotate_dihedral(cartesians, dihedral, angle, side_rot):
-    ''' Rotates by **angle** degrees a specified dihedral.
+    """ Rotates by **angle** degrees a specified dihedral.
 
     Args:
         cartesians (np.array): array of cartesian coordinates x, y and z.
@@ -569,7 +559,7 @@ def rotate_dihedral(cartesians, dihedral, angle, side_rot):
                                molecule that will be rotated.
     Returns:
         (pd.DataFrame): a DataFrame with rotated cartesians.
-    '''
+    """
     # ---- Importing global coordinates and reseting origin ----------------- #
     A, B, C, D = dihedral
     cartesians = cartesians - cartesians[B]
@@ -594,8 +584,8 @@ def rotate_dihedral(cartesians, dihedral, angle, side_rot):
 # =============================================================================
 
 def plot_dimap(N, log_file, out_name):
-    '''
-    '''
+    """
+    """
     table = pd.read_table(log_file, skiprows=1, delimiter='\s+',
                           names=['phi', 'psi', 'e'])
     table['e'][table.e > N] = N
@@ -628,18 +618,20 @@ def plot_dimap(N, log_file, out_name):
     plt.xlim(xmin-incr, xmax+incr)
     incr = (ymax-ymin)/100
     plt.ylim(ymin-incr, ymax+incr)
+    plt.xlabel('PHI')
+    plt.ylabel('PSI')
     plt.savefig(out_name)
     plt.close()
 
 
-def naive_clustering(traj, energ, maxim, rms_lim):
-    '''
-    '''
+def naive_clustering(traj, energ, rms_lim):
+    """
+    """
     idxs = np.where(energ <= 5)[0]
     idxs_energies = energ[idxs]
 
     leaders = []
-    clusters = np.ndarray(idxs.size, dtype=np.int)
+    clusters = np.ndarray(idxs.size, dtype=int)
     clusters.fill(-1)
     counter = -1
     while idxs_energies.min() != np.inf:
@@ -661,8 +653,8 @@ def naive_clustering(traj, energ, maxim, rms_lim):
 def dimap_exploration(pdb_file, psf_file, dihedrals, grid_space,
                       xmin, xmax, ymin, ymax, prm_file, minim_steps,
                       namd2, nproc):
-    '''
-    '''
+    """
+    """
     parsed_pdb = parse_pdb(pdb_file)
     a, b, c, d = dihedrals[0][0]
     e = dihedrals[0][1][-1]
@@ -729,9 +721,90 @@ def dimap_exploration(pdb_file, psf_file, dihedrals, grid_space,
     return phis, psis, energies, trajectory_pdb
 
 
+def dimap_parallel(pdb_file, parsed_pdb, psf_file, dihedrals, grid_space,
+                   xmin, xmax, ymin, ymax, prm_file, minim_steps,
+                   namd2, nproc):
+    """
+    """
+    # =================================================================
+    # Load data to make inputs
+    # =================================================================
+    a, b, c, d = dihedrals[0][0]
+    e = dihedrals[0][1][-1]
+    # initial DataFrame
+    PDB_DF = parsed_pdb.copy()
+    # getting atoms to rotate
+    side_rot_PHI = get_both_sides(psf_file, dihedrals[0][0])
+    side_rot_PSI = get_both_sides(psf_file, dihedrals[0][1])
+    # mesh of angle pairs (to be consumed)
+    mesh = mk_mesh(grid_space, grid_space, xmin, xmax, ymin, ymax)
+
+    tuple_info = {}
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        os.chdir(tmpdirname)
+        print('Temp dir created. Writing files.')
+        for i, x in enumerate(mesh):
+            # =================================================================
+            # Rotations
+            # =================================================================
+            cartesians = np.asarray(parsed_pdb[['x', 'y', 'z']])
+            # setting phi value
+            pdb_rot_first = set_dihedral_value(
+             cartesians, dihedrals[0][0], x[0], side_rot_PHI)
+            # setting psi value
+            pdb_rotated = set_dihedral_value(
+             pdb_rot_first, dihedrals[0][1], x[1], side_rot_PSI)
+            # updating initial DataFrame
+            PDB_DF['x'] = pdb_rotated.T[0]
+            PDB_DF['y'] = pdb_rotated.T[1]
+            PDB_DF['z'] = pdb_rotated.T[2]
+            # fixing values of phi & psi in occupancy column of the DataFrame
+            for atom in [a, b, c, d, e]:
+                PDB_DF.loc[atom, 'BFactor'] = '1.00'
+            # =================================================================
+            # Writing
+            # =================================================================
+            str_name = '{}-{}-{}-{}-{}.PHI.pdb'.format(i, a, b, c, d)
+            written_pdb = write(PDB_DF, 'rot--' + str_name)
+            config_file = conf_creator(written_pdb, psf_file, prm_file,
+                                       steps=minim_steps)
+            tuple_info.update({config_file: {'phi': x[0],
+                                             'psi': x[1],
+                                             'energy': 0.0,
+                                             'frame': written_pdb}})
+        # =================================================================
+        # Minimization
+        # =================================================================
+        commands = ['{0} +p1 {1} > {1}.log'.format(namd2, config_file)
+                    for config_file in tuple_info]
+        pool = Pool(nproc)
+        start2 = time.time()
+        print('Starting minimizations with {} cores.'.format(nproc))
+        pool.map(os.system, commands)
+        print('Minimizations of rot-- files in {}'.format(time.time() - start2))
+        # =================================================================
+        # Information
+        # =================================================================
+        # absolute energies
+        for config_file in tuple_info:
+            loginfo = log(config_file + '.log')
+            tuple_info[config_file]['energy'] = loginfo.get_last_energy()
+
+        # frame coordinates
+        keys = sorted(list(tuple_info.keys()),
+                      key=lambda f: int(f.split('rot--')[1].split('-')[0]))
+        to_join = []
+        for key in keys:
+            frame = 'OPT_' + tuple_info[key]['frame'] + '.coor'
+            to_join.append(md.load_pdb(frame))
+        os.chdir(os.path.expanduser('~'))
+    print('temp dir removed')
+    return tuple_info, md.join(to_join)
+
+
 def plot_exploration(xmin, xmax, ymin, ymax, restricted, cl, dataf0, leads):
-    '''
-    '''
+    """
+    """
     generic_matplotlib()
     plt.xlim(xmin, xmax)
     plt.ylim(ymin, ymax)
@@ -752,3 +825,144 @@ def plot_exploration(xmin, xmax, ymin, ymax, restricted, cl, dataf0, leads):
 
     plt.savefig('exploration')
     plt.close()
+
+
+def pickle_to_file(data, file_name):
+    """ Serialize data using **pickle**.
+
+    Args:
+        data (object)  : any serializable object.
+        file_name (str): name of the **pickle** file to be created.
+    Returns:
+        (str): file_name
+    """
+    with open(file_name, 'wb') as file:
+        pickle.dump(data, file)
+    return file_name
+
+
+def unpickle_from_file(file_name):
+    ''' Unserialize a **pickle** file.
+
+    Args:
+        file_name (str): file to unserialize.
+    Returns:
+        (object): an unserialized object.
+    '''
+    with open(file_name, 'rb') as file:
+        data = pickle.load(file)
+    return data
+
+
+def combinatory(top_iterable):
+    """
+    """
+    # ---- Constructors parameters ------------------------------------------ #
+    LEN = [len(x) for x in top_iterable]
+    N = np.product(LEN)
+    DIV = [np.product(LEN[0:x+1]) for x in range(len(top_iterable))]
+    REP = [int(N/D) for D in DIV]
+    repetitions = [int(N/(REP[x]*LEN[x])) for x in range(len(top_iterable))]
+    # ---- Combinatory ------------------------------------------------------ #
+    columns = []
+    for index, iterable in enumerate(top_iterable):
+        col = []
+        for idx, element in enumerate(iterable):
+            r = REP[index]
+            while r != 0:
+                col.append(element)
+                r -= 1
+        columns.append(col)
+    # ---- Final product ---------------------------------------------------- #
+    COMB = [iterable*repetitions[index]
+            for index, iterable in enumerate(columns)]
+    # ---- List of angles creation ------------------------------------------ #
+    ANG = []
+    for index in range(len(COMB[0])):
+        conformer = []
+        for idx, iterable in enumerate(COMB):
+            conformer.append(COMB[idx][index])
+        ANG.append(conformer)
+    return ANG
+
+
+def get_minima_from_database(database_dir, names):
+    database = os.listdir(database_dir)
+    minima = []
+    for i, name in enumerate(names):
+        if name not in database:
+            # abort if a detected dihedral is not in database
+            print('\n{} is not in database. Aborting!'.format(name))
+            break
+        else:
+            # find minima for the corresponding angles
+            min_file = os.path.join(database_dir, name, '{}.min'.format(name))
+            min_data = unpickle_from_file(min_file)
+            minimum = []
+            for key in min_data:
+                idx = min_data[key]['index']
+                phi = min_data[key]['phis'].iloc[idx]
+                psi = min_data[key]['psis'].iloc[idx]
+                minimum.append((phi, psi))
+            minima.append(minimum)
+    return minima
+
+
+def generate_conformers(psf_file, pdb_file, indices, combinatory):
+    parsed = prd.parsePDB(pdb_file)
+    coords_stack = [parsed.getCoords()]
+    conformers = []
+    for conformer in combinatory:
+        for i, phi_psi in enumerate(conformer):
+            phi_val, psi_val = phi_psi
+            phi_idx, psi_idx = indices[i]
+            phi_side_rot = get_both_sides(psf_file, phi_idx)
+            psi_side_rot = get_both_sides(psf_file, psi_idx)
+            coords_stack.append(
+                set_dihedral_value(coords_stack[-1], phi_idx, phi_val,
+                                   phi_side_rot))
+            coords_stack.append(
+                set_dihedral_value(coords_stack[-1], psi_idx, psi_val,
+                                   psi_side_rot))
+        conformers.append(coords_stack[-1])
+    return conformers
+
+
+def minimimze_conformers(pdb_parsed, psf_file, prm_file, conformers, namd2,
+                         nproc):
+    tuple_info = {}
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        os.chdir(tmpdirname)
+        # ---- generation of config files
+        config_files = []
+        for i, conformer in enumerate(conformers):
+            pdb_parsed.setCoords(conformer)
+            pdb_name = 'premin_{}.pdb'.format(i)
+            written_pdb = prd.writePDB(pdb_name, pdb_parsed)
+            config_file = conf_creator(pdb_name, psf_file, prm_file,
+                                           steps=1000, per_cycle=20)
+            tuple_info.update(
+                {config_file: {'energy': 0.0, 'frame': written_pdb}})
+            config_files.append(config_file)
+
+        commands = ['{0} +p1 {1} > {1}.log'.format(namd2, config_file) for
+                    config_file in config_files]
+        # ---- minimizations
+        pool = Pool(nproc)
+        start2 = time.time()
+        print('Starting minimizations with {} cores.'.format(nproc))
+        pool.map(os.system, commands)
+        print(
+            'Minimizations of rot-- files in {}'.format(time.time() - start2))
+        # ---- recopiling information
+        for config_file in config_files:
+            loginfo = log(config_file + '.log')
+            tuple_info[config_file]['energy'] = loginfo.get_last_energy()
+        keys = sorted(list(tuple_info.keys()),
+                      key=lambda f: int(f.split('_')[1].split('.')[0]))
+        to_join = []
+        for key in keys:
+            frame = 'OPT_' + tuple_info[key]['frame'] + '.coor'
+            to_join.append(md.load_pdb(frame))
+        os.chdir(os.path.expanduser('~'))
+        return tuple_info, md.join(to_join)

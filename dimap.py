@@ -3,108 +3,105 @@
 """
 Created on : Mon Mar 16 12:44:51 2020
 @author    : Roy Gonzalez-Aleman
-@mail      : rglez.developer@gmail.com
+@mail      : roy.gonzalez.aleman@gmail.com
 """
 
 import os
-import sys
-import time
 import shutil
-import pandas as pd
-import configparser as conf
+import time
 
-import functions as dimap
+import pandas as pd
+
+import difuncts as dimap
+import diparse
 
 starting_time = time.time()
 
 # =============================================================================
-# Parsing configuration file arguments
+# 1. Parsing configuration file arguments
 # =============================================================================
-root_dir = os.path.abspath('.')
-argv = sys.argv[1]
-config = conf.ConfigParser()
-config.read(argv)
-# [files] section
-psf_file = config.get('files', 'psf_path')
-pdb_file = config.get('files', 'pdb_path')
-prm_file = config.get('files', 'prm_path')
-# [params] section
-grid_space = config.getfloat('params', 'angle_step')
-e_cutoff = config.getfloat('params', 'energy_cut')
-rms_lim = config.getfloat('params', 'rmsd_cut')
-xmin = config.getfloat('params', 'xmin')
-xmax = config.getfloat('params', 'xmax')
-ymin = config.getfloat('params', 'ymin')
-ymax = config.getfloat('params', 'ymax')
-# [namd] section
-namd2 = config.get('namd', 'namd_path')
-nproc = config.getint('namd', 'nprocs')
-minim_steps = config.getint('namd', 'minim_steps')
-# [output] section
-base_name = config.get('outputs', 'base_name')
-dcd_out_name = '{}.dcd'.format(base_name)
-
+# argv = sys.argv[1]
+argv = '/home/roy.gonzalez-aleman/RoyHub/DiMap/inputs/dissac.conf'
+cfg = diparse.parser(argv)
 
 # =============================================================================
-# Parsing specified files
+# 2. Parsing dihedrals (either automatic or read from cfg)
 # =============================================================================
-parsed_psf = dimap.parse_psf(psf_file)
-psf_name = os.path.basename(psf_file)
-pdb_name = os.path.basename(pdb_file)
-
-if config.getboolean('params', 'auto_dihedrals'):
-    dihedrals = dimap.find_glycosidics(parsed_psf)
+parsed_psf = dimap.parse_psf(cfg.psf_file)
+if cfg.auto:
+    basename, dihedrals = dimap.find_glycosidics(parsed_psf)
 else:
-    phi_angle = [int(x) for x in config.get('params', 'phi').split()]
-    psi_angle = [int(x) for x in config.get('params', 'psi').split()]
+    phi_angle = [int(x) for x in cfg.phi]
+    psi_angle = [int(x) for x in cfg.psi]
     dihedrals = [[phi_angle, psi_angle]]
+    c1 = phi_angle[1]
+    cx = phi_angle[3]
+    basename = '{}_{}_{}_{}'.format(parsed_psf.iloc[c1].resname,
+                                    parsed_psf.iloc[c1].atomname,
+                                    parsed_psf.iloc[cx].atomname,
+                                    parsed_psf.iloc[cx].resname)
 
 print('Selected dihedrals are: {}'.format(dihedrals))
+print('Basename for outputs is: {}'.format(basename))
 
 # =============================================================================
-# Rotations (Rodrigues Method)
+# 3. Rotations (Rodrigues Method)
 # =============================================================================
-# phi & psi definition --------------------------------------------------------
+# phi & psi definition
 a, b, c, d = dihedrals[0][0]
 e = dihedrals[0][1][-1]
-# creation of production folder -----------------------------------------------
-opt_folder = os.path.join(
-        root_dir, 'out_{}-{}_{}_{}_{}_{}'.format(base_name, a, b, c, d, e))
+
+# creation of production folder
+opt_folder = os.path.abspath(os.path.join(cfg.root_dir, '{}'.format(basename)))
 err1 = 'ERROR: Directory {} exists. Please back it up !!!'.format(opt_folder)
 assert dimap.overwrite_dir(opt_folder), err1
-# rotations -------------------------------------------------------------------
-phis, psis, energies, trajectory_pdb = dimap.dimap_exploration(
-        pdb_file, psf_file, dihedrals, grid_space, xmin, xmax, ymin, ymax,
-        prm_file, minim_steps, namd2, nproc)
 
-
+# rotations
+parsed_pdb = dimap.parse_pdb(cfg.pdb_file)
+mapdict, traj = dimap.dimap_parallel(cfg.pdb_file, parsed_pdb,cfg.psf_file,
+                                     dihedrals, cfg.grid_space, cfg.xmin,
+                                     cfg.xmax, cfg.ymin, cfg.ymax,
+                                     cfg.prm_file, cfg.minim_steps, cfg.namd2,
+                                     cfg.nproc)
 # =============================================================================
-# Inside the final folder
+# 4. Inside the final folder
 # =============================================================================
 os.chdir(opt_folder)
-# Create total Exploration.log and extract restricted exploration -------------
-dataf0 = pd.DataFrame(data=list(zip(phis, psis, energies)),
-                      columns=['phi', 'psi', 'energy'])
-dataf0['energy'] = dataf0['energy'] - dataf0['energy'].min()
-with open('exploration.log', 'wt') as expl:
-    dataf0.to_string(expl, index=False)
-restricted = dataf0[dataf0.energy <= e_cutoff]
-# Trajectory saving -----------------------------------------------------------
-PSF = shutil.copy(psf_file, '.')
-trajectory_pdb = trajectory_pdb[1:]
-trajectory_pdb.save_dcd(dcd_out_name)
-trajectory_pdb.center_coordinates()
-# Clustering ------------------------------------------------------------------
-cl, leads = dimap.naive_clustering(trajectory_pdb, dataf0.energy,
-                                   e_cutoff, rms_lim)
-# Plots -----------------------------------------------------------------------
-out_name = base_name
-dimap.plot_exploration(xmin, xmax, ymin, ymax, restricted, cl, dataf0, leads)
-dimap.plot_dimap(e_cutoff, 'exploration.log', out_name)
 
+# Create total Exploration.log and extract restricted exploration
+dataf0 = pd.DataFrame(mapdict).T[['phi', 'psi', 'energy']]
+dataf0 = dataf0.astype({'phi': float, 'psi': float, 'energy': float})
+dataf0 = dataf0.reset_index(drop=True)
+dataf0['energy'] = dataf0['energy'] - dataf0['energy'].min()
+
+with open('{}.log'.format(basename), 'wt') as expl:
+    dataf0.to_string(expl, index=False)
+restricted = dataf0[dataf0.energy <= cfg.e_cutoff]
+
+# Trajectory saving -----------------------------------------------------------
+PSF = shutil.copy(cfg.psf_file, basename + '.psf_14')
+traj.save_dcd(basename + '.dcd')
+traj.center_coordinates()
+
+# Clustering ------------------------------------------------------------------
+cl, leads = dimap.naive_clustering(traj, dataf0.energy, cfg.rms_lim)
+
+# Minima database -------------------------------------------------------------
+minima = {
+    x: {'alternatives': cl[i],
+        'energies': dataf0.energy[cl[i]],
+        'phis': dataf0.phi[cl[i]],
+        'psis': dataf0.psi[cl[i]],
+        'index': cl[i].tolist().index(x)} for i, x in enumerate(leads)}
+dimap.pickle_to_file(minima, '{}.min'.format(basename))
+
+# Plots -----------------------------------------------------------------------
+dimap.plot_exploration(cfg.xmin, cfg.xmax, cfg.ymin, cfg.ymax,
+                       restricted, cl, dataf0, leads)
+dimap.plot_dimap(cfg.e_cutoff, '{}.log'.format(basename), basename)
 
 # =============================================================================
 # Timing
 # =============================================================================
 final_time = time.time() - starting_time
-print('\n\nDiMap execution took: {:18.2f} sec'.format(final_time))
+print('\n\nDiMap execution took: {:3.2f} sec'.format(final_time))
