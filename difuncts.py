@@ -368,7 +368,7 @@ def mk_mesh(x=5, y=5, xmin=-180, xmax=180, ymin=-180, ymax=180):
             meshgrid.append(xy_pair)
     return meshgrid
 
-def mk_mesh2(xy_min=-180, xy_max=180, xy_step = 60):
+def mk_mesh2(xy_min=-180, xy_max=180, xy_step=60):
     """
     Creates a list of X,Y pairs of values in a grid format.
     RETURN created meshgrid.
@@ -401,16 +401,11 @@ def mk_mesh2(xy_min=-180, xy_max=180, xy_step = 60):
     xy_values_up_down_second_fix1 = xy_values_up_down_second_fix.copy()
     xy_values_up_down_second_fix.reverse()
 
-    meshes = {}
-
-    meshes['down-up'] = xy_values_up_down
-    meshes['up-down'] = xy_values_down_up
-    meshes['up-up'] = xy_values_up_up
-    meshes['down-down'] = xy_values_down_down
-    meshes['up*-down'] = xy_values_up1_down
-    meshes['down*-up'] = xy_values_up_down1
-    meshes['up-down*'] = xy_values_up_down_second_fix1
-    meshes['down-up*'] = xy_values_up_down_second_fix
+    meshes = {'down-up': xy_values_up_down, 'up-down': xy_values_down_up,
+              'up-up': xy_values_up_up, 'down-down': xy_values_down_down,
+              'up*-down': xy_values_up1_down, 'down*-up': xy_values_up_down1,
+              'up-down*': xy_values_up_down_second_fix1,
+              'down-up*': xy_values_up_down_second_fix}
 
     return meshes
 
