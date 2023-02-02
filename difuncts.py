@@ -8,21 +8,20 @@ Created on : Sun Mar 15 13:18:50 2020
 import glob
 import itertools as it
 import math
-import os
-import pickle
-import tempfile
-import time
-from collections import OrderedDict, namedtuple as nt
-from multiprocessing import Pool
-from subprocess import run
-
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
+import os
 import pandas as pd
+import pickle
 import prody as prd
+import tempfile
+import time
+from collections import OrderedDict, namedtuple as nt
+from multiprocessing import Pool
 from scipy.interpolate import griddata
+from subprocess import run
 
 
 def parse_pdb(pdb_file):
@@ -417,6 +416,7 @@ def extract_values(itertools_product, reverse=False):
     if reverse:
         return [(x[1], x[0]) for x in itertools_product]
     return [(x[0], x[1]) for x in itertools_product]
+
 
 def mk_mesh1(xy_min=-180, xy_max=180, xy_step=60):
     # create combinations of flows
