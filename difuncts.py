@@ -8,6 +8,8 @@ Created on : Sun Mar 15 13:18:50 2020
 import glob
 import itertools as it
 import math
+import shutil
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import mdtraj as md
@@ -407,6 +409,7 @@ def mk_mesh2(xy_min=-180, xy_max=180, xy_step=60):
               'down-up*': xy_values_up_down_second_fix}
 
     return meshes
+
 
 def extract_values(itertools_product, reverse=False):
     if reverse:
@@ -813,15 +816,14 @@ def dimap_parallel(pdb_file, parsed_pdb, psf_file, dihedrals, grid_space,
     side_rot_PSI = get_both_sides(psf_file, dihedrals[0][1])
     # mesh of angle pairs (to be consumed)
     mesh = mk_mesh(grid_space, grid_space, xmin, xmax, ymin, ymax)
+    meshes = mk_mesh1()
 
-    tuple_info = {}
-    with tempfile.TemporaryDirectory() as tmpdirname:
-        os.chdir(tmpdirname)
+    for mesh in meshes:
         print('Temp dir created. Writing files.')
-        for i, x in enumerate(mesh):
-            # =================================================================
+        for i, x in enumerate(meshes[mesh]):
+            # =============================================================
             # Rotations
-            # =================================================================
+            # =============================================================
             cartesians = np.asarray(parsed_pdb[['x', 'y', 'z']])
             # setting phi value
             pdb_rot_first = set_dihedral_value(
@@ -836,32 +838,27 @@ def dimap_parallel(pdb_file, parsed_pdb, psf_file, dihedrals, grid_space,
             # fixing values of phi & psi in occupancy column of the DataFrame
             for atom in [a, b, c, d, e]:
                 PDB_DF.loc[atom, 'BFactor'] = '1.00'
-            # =================================================================
+            # =============================================================
             # Writing
-            # =================================================================
+            # =============================================================
             str_name = '{}-{}-{}-{}-{}.PHI.pdb'.format(i, a, b, c, d)
             written_pdb = write(PDB_DF, 'rot--' + str_name)
             config_file = conf_creator(written_pdb, psf_file, prm_file,
                                        steps=minim_steps)
-            tuple_info.update({config_file: {'phi': x[0],
-                                             'psi': x[1],
-                                             'energy': 0.0,
-                                             'frame': written_pdb}})
-        # =================================================================
-        # Minimization
-        # =================================================================
-        commands = ['{0} +p1 {1} > {1}.log'.format(namd2, config_file)
-                    for config_file in tuple_info]
-        pool = Pool(nproc)
-        start2 = time.time()
-        print('Starting minimizations with {} cores.'.format(nproc))
-        pool.map(os.system, commands)
-        print('Minimizations of rot-- files in {}'.format(time.time() - start2))
-        # =================================================================
-        # Information
-        # =================================================================
-        # absolute energies
-        for config_file in tuple_info:
+            # =============================================================
+            # Minimization
+            # =============================================================
+            command = '{0} +p{2} {1} > {1}.log'.format(
+                namd2, config_file, nproc)
+            os.system(command)
+            coor_file = 'OPT_rot--' + str_name + '.coor'
+            pdb_file = 'OPT_rot--' + str_name
+            shutil.copy(coor_file, '.'.join(coor_file.split('.')[:-1]))
+            parsed_pdb = parse_pdb(pdb_file)
+            # =================================================================
+            # Information
+            # =================================================================
+            # absolute energies
             loginfo = log(config_file + '.log')
             tuple_info[config_file]['energy'] = loginfo.get_last_energy()
 

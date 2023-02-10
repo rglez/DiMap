@@ -58,7 +58,7 @@ assert dimap.overwrite_dir(opt_folder), err1
 
 # rotations
 parsed_pdb = dimap.parse_pdb(cfg.pdb_file)
-mapdict, traj = dimap.dimap_parallel(cfg.pdb_file, parsed_pdb,cfg.psf_file,
+mapdict, traj = dimap.dimap_parallel(cfg.pdb_file, parsed_pdb, cfg.psf_file,
                                      dihedrals, cfg.grid_space, cfg.xmin,
                                      cfg.xmax, cfg.ymin, cfg.ymax,
                                      cfg.prm_file, cfg.minim_steps, cfg.namd2,
