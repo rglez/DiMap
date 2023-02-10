@@ -431,13 +431,15 @@ def mk_mesh1(xy_min=-180, xy_max=180, xy_step=60):
     for combination in flows_combinations:
         for fix in fixed_combinations:
             key = "{}-{}-{}-{}".format(*combination, *fix)
-            flow1, flow2  = combination
+            flow1, flow2 = combination
             if fix[0] == 0:
                 iter_product = it.product(values[flow2], values[flow1])
-                meshes.update({key: extract_values(iter_product, reverse=True)})
+                meshes.update({key: extract_values(iter_product, reverse=True)}
+                              )
             else:
                 iter_product = it.product(values[flow1], values[flow2])
-                meshes.update({key: extract_values(iter_product, reverse=False)})
+                meshes.update({key: extract_values(iter_product, reverse=False)
+                               })
     return meshes
 
 # =============================================================================
@@ -915,13 +917,13 @@ def pickle_to_file(data, file_name):
 
 
 def unpickle_from_file(file_name):
-    ''' Unserialize a **pickle** file.
+    """ Unserialize a **pickle** file.
 
     Args:
         file_name (str): file to unserialize.
     Returns:
         (object): an unserialized object.
-    '''
+    """
     with open(file_name, 'rb') as file:
         data = pickle.load(file)
     return data
