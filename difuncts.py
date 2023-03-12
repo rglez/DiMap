@@ -40,6 +40,7 @@ def parse_pdb(pdb_file):
     """
 
     # ---- open file ----------------------------------------------------------
+    pdb_file = '/home/tom/TomHub/DiMap/example/1-2PG.pdb'
     with open(pdb_file, 'rt') as psf:
         lines = psf.readlines()
     # ---- parse atomic info --------------------------------------------------
@@ -835,21 +836,30 @@ def dimap_parallel(pdb_file, parsed_pdb, psf_file, dihedrals, grid_space,
             PDB_DF['x'] = pdb_rotated.T[0]
             PDB_DF['y'] = pdb_rotated.T[1]
             PDB_DF['z'] = pdb_rotated.T[2]
+            # tuple_info = {}
+            tuple_meshes = {}
             # fixing values of phi & psi in occupancy column of the DataFrame
             for atom in [a, b, c, d, e]:
                 PDB_DF.loc[atom, 'BFactor'] = '1.00'
             # =============================================================
             # Writing
             # =============================================================
-            str_name = '{}-{}-{}-{}-{}.PHI.pdb'.format(i, a, b, c, d)
-            written_pdb = write(PDB_DF, 'rot--' + str_name)
-            config_file = conf_creator(written_pdb, psf_file, prm_file,
-                                       steps=minim_steps)
+                str_name = '{}-{}-{}-{}-{}.PHI.pdb'.format(i, a, b, c, d)
+                written_pdb = write(PDB_DF, 'rot--' + str_name)
+                config_file = conf_creator(written_pdb, psf_file, prm_file,
+                                           steps=minim_steps)
+                # =============================================================
+                # config_files per meshes
+                # =============================================================
+            tuple_meshes.update({config_file: dict(phi=x[0], psi=x[1],
+                                                   energy=0.0,
+                                                   frame=written_pdb)
+                                        for k in meshes.keys()})
             # =============================================================
             # Minimization
             # =============================================================
             command = '{0} +p{2} {1} > {1}.log'.format(
-                namd2, config_file, nproc)
+                          namd2, config_file, nproc)
             os.system(command)
             coor_file = 'OPT_rot--' + str_name + '.coor'
             pdb_file = 'OPT_rot--' + str_name
@@ -860,18 +870,18 @@ def dimap_parallel(pdb_file, parsed_pdb, psf_file, dihedrals, grid_space,
             # =================================================================
             # absolute energies
             loginfo = log(config_file + '.log')
-            tuple_info[config_file]['energy'] = loginfo.get_last_energy()
+            tuple_meshes[config_file]['energy'] = loginfo.get_last_energy()
 
         # frame coordinates
-        keys = sorted(list(tuple_info.keys()),
+            keys = sorted(list(tuple_meshes.keys()),
                       key=lambda f: int(f.split('rot--')[1].split('-')[0]))
-        to_join = []
-        for key in keys:
-            frame = 'OPT_' + tuple_info[key]['frame'] + '.coor'
-            to_join.append(md.load_pdb(frame))
-        os.chdir(os.path.expanduser('~'))
-    print('temp dir removed')
-    return tuple_info, md.join(to_join)
+            to_join = []
+            for key in keys:
+                frame = 'OPT_' + tuple_meshes[key]['frame'] + '.coor'
+                to_join.append(md.load_pdb(frame))
+            os.chdir(os.path.expanduser('~'))
+        print('temp dir removed')
+    return tuple_meshes, md.join(to_join)
 
 
 def plot_exploration(xmin, xmax, ymin, ymax, restricted, cl, dataf0, leads):
