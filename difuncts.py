@@ -851,15 +851,26 @@ def dimap_parallel(pdb_file, parsed_pdb, psf_file, dihedrals, grid_space,
                 # =============================================================
                 # config_files per meshes
                 # =============================================================
-            tuple_meshes.update({config_file: dict(phi=x[0], psi=x[1],
-                                                   energy=0.0,
-                                                   frame=written_pdb)
-                                        for k in meshes.keys()})
-            # =============================================================
+            # tuple_meshes.update({config_file: dict(phi=x[0], psi=x[1],
+            #                                        energy=0.0,
+            #                                        frame=written_pdb)
+            #                             for k in meshes.keys()})
+                for config_file in meshes:
+                    tuple_meshes.update({config_file: {'phi': x[0],
+                                                        'psi': x[1],
+                                                        'energy': 0.0,
+                                                        'frame': written_pdb}
+                                        for keys in meshes})
+            config_file = conf_creator(written_pdb, psf_file, prm_file,
+                                       steps=minim_steps)
+            # """ estas son las ideas que tengo hasta ahora el error esta en
+            # la minimizacion ahora"""
+
+            #==============================================================
             # Minimization
             # =============================================================
             command = '{0} +p{2} {1} > {1}.log'.format(
-                          namd2, config_file, nproc)
+                            namd2, config_file, nproc)
             os.system(command)
             coor_file = 'OPT_rot--' + str_name + '.coor'
             pdb_file = 'OPT_rot--' + str_name
