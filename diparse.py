@@ -65,4 +65,4 @@ class parser:
         self.minim_steps = self.cfg.getint('namd', 'minim_steps')
 
 
-# self = parser('/home/roy.gonzalez-aleman/RoyHub/DiMap/inputs/dissac.conf')
+

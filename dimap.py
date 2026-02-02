@@ -21,7 +21,7 @@ starting_time = time.time()
 # 1. Parsing configuration file arguments
 # =============================================================================
 # argv = sys.argv[1]
-argv = '/home/roy.gonzalez-aleman/RoyHub/DiMap/example/dissac.conf'
+argv = '/media/tomas/e9ad14c8-6bd8-4a0c-b5c1-02d8a2c93c7c/2026/PROJ_ROY/example/dissac.conf'
 cfg = diparse.parser(argv)
 
 # =============================================================================
