@@ -6,7 +6,6 @@ Created on : Sun Mar 15 13:18:50 2020
 @mail      : rglez.developer@gmail.com
 """
 import glob
-import itertools as it
 import math
 import os
 import pickle
@@ -368,85 +367,6 @@ def mk_mesh(x=5, y=5, xmin=-180, xmax=180, ymin=-180, ymax=180):
             meshgrid.append(xy_pair)
     return meshgrid
 
-def mk_mesh2(xy_min=-180, xy_max=180, xy_step = 60):
-    """
-    Creates a list of X,Y pairs of values in a grid format.
-    RETURN created meshgrid.
-    """
-
-
-    xy_values = np.arange(xy_min, xy_max + xy_step, xy_step)
-    xy_values_up1_down = []
-    xy_values_up_down_second_fix = []
-    xy_values_down_down = []
-    xy_values_up_down = []
-    for i in xy_values:
-        down_down = (i, i)
-        counter_flow = (i, -1*i)
-        for j in xy_values:
-            fix_one_flow = (i, j)
-            fix_second_flow = (j, -1*i)
-            xy_values_up1_down.append(fix_one_flow)
-            xy_values_up_down_second_fix.append(fix_second_flow)
-        xy_values_down_down.append(down_down)
-        xy_values_up_down.append(counter_flow)
-
-    xy_values_up_down1 = xy_values_up1_down.copy()
-    xy_values_up1_down.reverse()
-    xy_values_up_up = xy_values_down_down.copy()
-    xy_values_down_down.reverse()
-    xy_values_down_up = xy_values_up_down.copy()
-    xy_values_up_down.reverse()
-    xy_values_up_down_second_fix1 = xy_values_up_down_second_fix.copy()
-    xy_values_up_down_second_fix.reverse()
-
-    meshes = {}
-
-    meshes['down-up'] = xy_values_up_down
-    meshes['up-down'] = xy_values_down_up
-    meshes['up-up'] = xy_values_down_down
-    meshes['down-down'] = xy_values_up_up
-    meshes['up*-down'] = xy_values_up_down1
-    meshes['down*-up'] = xy_values_up1_down
-    meshes['up-down*'] = xy_values_up_down_second_fix
-    meshes['down-up*'] = xy_values_up_down_second_fix1
-
-    return meshes
-
-def extract_values(itertools_product, reverse=False):
-    if reverse:
-        return [(x[1], x[0]) for x in itertools_product]
-    return [(x[0], x[1]) for x in itertools_product]
-
-def mk_mesh1(xy_min=-180, xy_max=180, xy_step=60):
-    # create combinations of flows
-    flows = ['up', 'down']
-    flows_combinations = set(it.combinations([*flows, *flows], 2))
-    # define up & down values once
-    values = {'up': range(xy_min, xy_max, xy_step),
-              'down': range(xy_max, xy_min, -xy_step)}
-    # always fix one position
-    fixed = [0, 1]
-    fixed_combinations = set([x for x in it.combinations([*fixed, *fixed], 2)
-                              if x[0] != x[1]])
-
-    # explore all possible combinations
-    meshes = {}
-    for combination in flows_combinations:
-        for fix in fixed_combinations:
-            key = "{}-{}-{}-{}".format(*combination, *fix)
-            flow1, flow2  = combination
-            if fix[0] == 0:
-                iter_product = it.product(values[flow2], values[flow1])
-                meshes.update({key: extract_values(iter_product, reverse=True)})
-            else:
-                iter_product = it.product(values[flow1], values[flow2])
-                meshes.update({key: extract_values(iter_product, reverse=False)})
-    return meshes
-
-# =============================================================================
-# central.rotations
-# =============================================================================
 def get_both_sides(PSF_file, dihedral):
     """
     "Cuts" a non-cyclic molecule in two parts. One of them (side_rot) contains
@@ -665,7 +585,7 @@ def plot_dimap(N, log_file, out_name):
     """
     table = pd.read_table(log_file, skiprows=1, delimiter='\s+',
                           names=['phi', 'psi', 'e'])
-    table['e'][table.e > N] = N
+    table.loc[table["e"] > N, "e"] = N
 
     x_to_plot = np.asarray(table.phi)
     y_to_plot = np.asarray(table.psi)
@@ -837,7 +757,7 @@ def dimap_parallel(pdb_file, parsed_pdb, psf_file, dihedrals, grid_space,
             PDB_DF['z'] = pdb_rotated.T[2]
             # fixing values of phi & psi in occupancy column of the DataFrame
             for atom in [a, b, c, d, e]:
-                PDB_DF.loc[atom, 'BFactor'] = '1.00'
+                PDB_DF.loc[atom, 'BFactor'] = 1.00
             # =================================================================
             # Writing
             # =================================================================
